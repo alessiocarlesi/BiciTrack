@@ -13,7 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.aless.bicitrack.ui.theme.BiciTrackTheme
-
+import android.os.Build
 class MainActivity : ComponentActivity() {
 
     // Launcher per i permessi Bluetooth necessari su Android 12+
@@ -37,6 +37,19 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.ACCESS_FINE_LOCATION
             )
         )
+// ... dentro onCreate ...
+        val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_SCAN,
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            )
+        } else {
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+
+        requestPermissionLauncher.launch(permissionsToRequest)
+
 
         setContent {
             BiciTrackTheme {
@@ -53,8 +66,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun BiciTrackDashboard() {
-    var heartRate by remember { mutableStateOf("--") }
-    var isConnected by remember { mutableStateOf(false) }
+    val heartRate by remember { mutableStateOf("--") }
+    val isConnected by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
