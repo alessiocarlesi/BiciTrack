@@ -4,7 +4,7 @@ object SessionSettings {
 
     // Sessione tipo 1: Allenamento base salute
     val sessioneBase: List<FaseAllenamento> = listOf(
-        FaseAllenamento("Riscaldamento", 80, 100, 5),      // 5 min
+        FaseAllenamento("Riscaldamento", 80, 100, 2),      // 5 min
         FaseAllenamento("Aerobica leggera", 100, 120, 10), // 10 min
         FaseAllenamento("Aerobica moderata", 120, 135, 10),// 10 min
         FaseAllenamento("Defaticamento", 80, 100, 5)       // 5 min
