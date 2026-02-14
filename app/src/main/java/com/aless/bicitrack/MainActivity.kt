@@ -1,8 +1,13 @@
 package com.aless.bicitrack
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,12 +19,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.lifecycleScope
+import androidx.room.Room
+import com.aless.bicitrack.data.db.AppDatabase
 import com.aless.bicitrack.ui.theme.BiciTrackTheme
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.content.ServiceConnection
-import android.os.IBinder
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -28,17 +34,33 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         if (!allGranted) {
-            Toast.makeText(
-                this,
-                "Permessi necessari per il corretto funzionamento",
-                Toast.LENGTH_LONG
-            ).show()
+            Toast.makeText(this, "Permessi necessari per sensore e notifiche", Toast.LENGTH_LONG).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Caricamento impostazioni salvate dal Database all'avvio
+        val db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java, "bicitrack-db"
+        ).build()
+
+        lifecycleScope.launch {
+            val ultimaSessione = db.sessioneDao().getSessione()
+            ultimaSessione?.let { entity ->
+                try {
+                    val listType = object : TypeToken<List<FaseAllenamento>>() {}.type
+                    val fasiRecuperate: List<FaseAllenamento> = Gson().fromJson(entity.jsonFasi, listType)
+                    SessionSettings.sessioneBase = fasiRecuperate
+                } catch (e: Exception) {
+                    android.util.Log.e("BiciTrack", "Errore nel caricamento sessione: ${e.message}")
+                }
+            }
+        }
+
+        // Gestione Permessi
         val permissions = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
                 arrayOf(
@@ -60,12 +82,11 @@ class MainActivity : ComponentActivity() {
             }
             else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-
         requestPermissionLauncher.launch(permissions)
 
         setContent {
             BiciTrackTheme {
-                // Stato per decidere se mostrare l'Editor o l'Allenamento
+                // Stato per gestire la navigazione tra Editor e Dashboard
                 var isEditing by remember { mutableStateOf(true) }
 
                 if (isEditing) {
@@ -77,15 +98,17 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 } else {
-                    AllenamentoScreen()
+                    AllenamentoScreen(onBackToEditor = { isEditing = true })
                 }
             }
         }
     }
 }
 
+// ... (resto dei pacchetti e classi invariato)
+
 @Composable
-fun AllenamentoScreen() {
+fun AllenamentoScreen(onBackToEditor: () -> Unit) {
     val context = LocalContext.current
     var service by remember { mutableStateOf<AllenamentoService?>(null) }
     var isBound by remember { mutableStateOf(false) }
@@ -129,9 +152,25 @@ fun AllenamentoScreen() {
             heartRate = service!!.heartRate,
             faseCorrente = service!!.faseCorrente,
             onStop = {
+                // 1. Scolleghiamo il servizio prima di fermarlo
+                if (isBound) {
+                    context.unbindService(connection)
+                    isBound = false
+                    service = null
+                }
+
+                // 2. Fermiamo il servizio (esegue il salvataggio in onDestroy)
                 val intent = Intent(context, AllenamentoService::class.java)
                 context.stopService(intent)
-                // Opzionale: torna all'editor dopo lo stop
+
+                // 3. CHIUSURA TOTALE E RIMOZIONE DALLE APP RECENTI
+                (context as? android.app.Activity)?.let { activity ->
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                        activity.finishAndRemoveTask()
+                    } else {
+                        activity.finishAffinity()
+                    }
+                }
             }
         )
     } else {
