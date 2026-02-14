@@ -83,16 +83,14 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             else -> "Mantieni ritmo"
         }
 
-        // Se lo stato cambia, dobbiamo parlare
+        // Se lo stato cambia (es. passi da "Aumenta" a "Mantieni")
         if (nuovaIndicazione != ultimaIndicazione) {
             ultimaIndicazione = nuovaIndicazione
 
-            // Parliamo solo se dobbiamo correggere il ritmo
-            if (nuovaIndicazione != "Mantieni ritmo") {
-                // Usiamo QUEUE_FLUSH per assicurarci che il comando sia immediato
-                tts?.speak(nuovaIndicazione, TextToSpeech.QUEUE_FLUSH, null, "BiciTrackMsg")
-                android.util.Log.d("BiciTrack", "Audio inviato: $nuovaIndicazione")
-            }
+            // Adesso dirà TUTTE le indicazioni, incluso "Mantieni ritmo"
+            speak(nuovaIndicazione)
+
+            android.util.Log.d("BiciTrack", "Audio inviato: $nuovaIndicazione")
         }
     }
     private fun speak(text: String) {

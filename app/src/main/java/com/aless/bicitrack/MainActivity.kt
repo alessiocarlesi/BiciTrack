@@ -39,33 +39,46 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Configurazione permessi dinamica in base alla versione di Android
         val permissions = when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> { // Android 13+
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
                 arrayOf(
                     Manifest.permission.BLUETOOTH_SCAN,
                     Manifest.permission.BLUETOOTH_CONNECT,
                     Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.BODY_SENSORS,
                     Manifest.permission.POST_NOTIFICATIONS
                 )
             }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> { // Android 12
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
                 arrayOf(
                     Manifest.permission.BLUETOOTH_SCAN,
                     Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.BODY_SENSORS
                 )
             }
-            else -> { // Android 11 e precedenti
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-            }
+            else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
 
         requestPermissionLauncher.launch(permissions)
 
         setContent {
             BiciTrackTheme {
-                AllenamentoScreen()
+                // Stato per decidere se mostrare l'Editor o l'Allenamento
+                var isEditing by remember { mutableStateOf(true) }
+
+                if (isEditing) {
+                    SessionSettingsEditor(
+                        fasiIniziali = SessionSettings.sessioneBase,
+                        onSave = { nuoveFasi ->
+                            SessionSettings.sessioneBase = nuoveFasi
+                            isEditing = false
+                        }
+                    )
+                } else {
+                    AllenamentoScreen()
+                }
             }
         }
     }
@@ -77,7 +90,6 @@ fun AllenamentoScreen() {
     var service by remember { mutableStateOf<AllenamentoService?>(null) }
     var isBound by remember { mutableStateOf(false) }
 
-    // Gestione della connessione al Servizio (Bridge tra UI e Background)
     val connection = remember {
         object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -93,11 +105,9 @@ fun AllenamentoScreen() {
         }
     }
 
-    // Ciclo di vita del collegamento al Servizio
     DisposableEffect(Unit) {
         val intent = Intent(context, AllenamentoService::class.java)
 
-        // Avvio compatibile con tutte le versioni di Android
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
@@ -114,7 +124,6 @@ fun AllenamentoScreen() {
         }
     }
 
-    // Logica di visualizzazione
     if (isBound && service != null) {
         AllenamentoDashboard(
             heartRate = service!!.heartRate,
@@ -122,10 +131,10 @@ fun AllenamentoScreen() {
             onStop = {
                 val intent = Intent(context, AllenamentoService::class.java)
                 context.stopService(intent)
+                // Opzionale: torna all'editor dopo lo stop
             }
         )
     } else {
-        // Mostra caricamento mentre il servizio si inizializza o connette al Polar
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
