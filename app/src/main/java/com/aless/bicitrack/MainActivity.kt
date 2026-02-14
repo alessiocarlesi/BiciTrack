@@ -34,17 +34,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Chiediamo i permessi runtime
-        val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
                 Manifest.permission.BLUETOOTH_CONNECT,
                 Manifest.permission.ACCESS_FINE_LOCATION
             )
-        } else {
-            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-        requestPermissionLauncher.launch(permissionsToRequest)
+        } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+
+        requestPermissionLauncher.launch(permissions)
 
         setContent {
             BiciTrackTheme {
@@ -52,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    BiciTrackDashboard()
+                    AllenamentoScreen()
                 }
             }
         }
@@ -60,15 +58,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun BiciTrackDashboard() {
+fun AllenamentoScreen() {
     val context = LocalContext.current
 
     var heartRate by remember { mutableStateOf("--") }
     var isConnected by remember { mutableStateOf(false) }
+    var faseCorrente by remember { mutableStateOf<FaseAllenamento?>(null) }
 
-    val polarId = "0FE04C3A"  // ID fisso del tuo Polar Verity Sense
-
-    // Istanza di PolarManager
     val polarManager = remember {
         PolarManager(context) { hr ->
             heartRate = hr.toString()
@@ -76,37 +72,26 @@ fun BiciTrackDashboard() {
         }
     }
 
-    // Connessione automatica all’avvio
+    // Configurazione della sessione di allenamento
+    val sessione = remember {
+        AllenamentoSessione(
+            polarManager = polarManager,
+            onFaseChange = { fase -> faseCorrente = fase },
+            onHRUpdate = { hr -> heartRate = hr.toString() },
+            onSessionEnd = { faseCorrente = null }
+        )
+    }
+
+    // Imposta la sessione tipo base
     LaunchedEffect(Unit) {
-        polarManager.connect(polarId)
+        polarManager.connect("0FE04C3A")
+        sessione.setFasi(SessionSettings.sessioneBase)
+        sessione.start()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(text = "BiciTrack", style = MaterialTheme.typography.headlineLarge)
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Text(text = "Frequenza Cardiaca", style = MaterialTheme.typography.labelLarge)
-        Text(text = "$heartRate BPM", style = MaterialTheme.typography.displayLarge)
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        Button(onClick = {
-            if (isConnected) {
-                // Passa l'ID al metodo disconnect()
-                polarManager.disconnect(polarId)
-                isConnected = false
-                heartRate = "--"
-            } else {
-                polarManager.connect(polarId)
-            }
-        }) {
-            Text(if (isConnected) "Disconnetti" else "Connetti Polar")
-        }
-    }
+    AllenamentoDashboard(
+        heartRate = if (isConnected) heartRate.toIntOrNull() ?: 0 else 0,
+        faseCorrente = faseCorrente,
+        onStop = { sessione.stop(); isConnected = false; heartRate = "--" }
+    )
 }
