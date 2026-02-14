@@ -1,6 +1,7 @@
 package com.aless.bicitrack
 
 import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -11,33 +12,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.aless.bicitrack.ui.theme.BiciTrackTheme
-import android.os.Build
+
 class MainActivity : ComponentActivity() {
 
-    // Launcher per i permessi Bluetooth necessari su Android 12+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         if (!allGranted) {
-            Toast.makeText(this, "Permessi necessari per connettere il Polar", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Permessi necessari per connettere il Polar",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Chiediamo i permessi all'avvio
-        requestPermissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.BLUETOOTH_SCAN,
-                Manifest.permission.BLUETOOTH_CONNECT,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            )
-        )
-// ... dentro onCreate ...
+        // Chiedi i permessi BLE/Location
         val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
@@ -49,7 +46,6 @@ class MainActivity : ComponentActivity() {
         }
 
         requestPermissionLauncher.launch(permissionsToRequest)
-
 
         setContent {
             BiciTrackTheme {
@@ -66,11 +62,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun BiciTrackDashboard() {
-    val heartRate by remember { mutableStateOf("--") }
-    val isConnected by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // Stato per battiti e connessione
+    var heartRate by remember { mutableStateOf("--") }
+    var isConnected by remember { mutableStateOf(false) }
+
+    // Istanza PolarManager
+    val polarManager = remember {
+        PolarManager(context = context) { hr ->
+            heartRate = hr.toString()
+        }
+    }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -82,7 +90,16 @@ fun BiciTrackDashboard() {
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Button(onClick = { /* Qui attiveremo la scansione Polar */ }) {
+        Button(onClick = {
+            if (!isConnected) {
+                polarManager.connect("0FE04C3A") // ID corretto del Polar
+                isConnected = true
+            } else {
+                polarManager.disconnect("0FE04C3A")
+                isConnected = false
+                heartRate = "--"
+            }
+        }) {
             Text(if (isConnected) "Disconnetti" else "Connetti Verity Sense")
         }
     }
