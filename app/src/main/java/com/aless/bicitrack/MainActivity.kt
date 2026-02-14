@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Chiedi i permessi BLE/Location
+        // Chiediamo i permessi runtime
         val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
@@ -44,7 +44,6 @@ class MainActivity : ComponentActivity() {
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
-
         requestPermissionLauncher.launch(permissionsToRequest)
 
         setContent {
@@ -64,15 +63,22 @@ class MainActivity : ComponentActivity() {
 fun BiciTrackDashboard() {
     val context = LocalContext.current
 
-    // Stato per battiti e connessione
     var heartRate by remember { mutableStateOf("--") }
     var isConnected by remember { mutableStateOf(false) }
 
-    // Istanza PolarManager
+    val polarId = "0FE04C3A"  // ID fisso del tuo Polar Verity Sense
+
+    // Istanza di PolarManager
     val polarManager = remember {
-        PolarManager(context = context) { hr ->
+        PolarManager(context) { hr ->
             heartRate = hr.toString()
+            isConnected = true
         }
+    }
+
+    // Connessione automatica all’avvio
+    LaunchedEffect(Unit) {
+        polarManager.connect(polarId)
     }
 
     Column(
@@ -91,16 +97,16 @@ fun BiciTrackDashboard() {
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(onClick = {
-            if (!isConnected) {
-                polarManager.connect("0FE04C3A") // ID corretto del Polar
-                isConnected = true
-            } else {
-                polarManager.disconnect("0FE04C3A")
+            if (isConnected) {
+                // Passa l'ID al metodo disconnect()
+                polarManager.disconnect(polarId)
                 isConnected = false
                 heartRate = "--"
+            } else {
+                polarManager.connect(polarId)
             }
         }) {
-            Text(if (isConnected) "Disconnetti" else "Connetti Verity Sense")
+            Text(if (isConnected) "Disconnetti" else "Connetti Polar")
         }
     }
 }
