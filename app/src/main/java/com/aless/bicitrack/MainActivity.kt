@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Richiesta permessi runtime
         val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             arrayOf(
                 Manifest.permission.BLUETOOTH_SCAN,
@@ -41,7 +42,6 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.ACCESS_FINE_LOCATION
             )
         } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-
         requestPermissionLauncher.launch(permissions)
 
         setContent {
@@ -64,6 +64,7 @@ fun AllenamentoScreen() {
     var heartRate by remember { mutableStateOf("--") }
     var isConnected by remember { mutableStateOf(false) }
     var faseCorrente by remember { mutableStateOf<FaseAllenamento?>(null) }
+    var editingFasi by remember { mutableStateOf(false) }
 
     val polarManager = remember {
         PolarManager(context) { hr ->
@@ -72,7 +73,6 @@ fun AllenamentoScreen() {
         }
     }
 
-    // Configurazione della sessione di allenamento
     val sessione = remember {
         AllenamentoSessione(
             polarManager = polarManager,
@@ -82,16 +82,63 @@ fun AllenamentoScreen() {
         )
     }
 
-    // Imposta la sessione tipo base
-    LaunchedEffect(Unit) {
-        polarManager.connect("0FE04C3A")
-        sessione.setFasi(SessionSettings.sessioneBase)
-        sessione.start()
-    }
+    // Lista modificabile delle fasi, inizialmente base
+    var fasiAttuali by remember { mutableStateOf(SessionSettings.sessioneBase.toMutableList()) }
 
-    AllenamentoDashboard(
-        heartRate = if (isConnected) heartRate.toIntOrNull() ?: 0 else 0,
-        faseCorrente = faseCorrente,
-        onStop = { sessione.stop(); isConnected = false; heartRate = "--" }
-    )
+    if (editingFasi) {
+        // Mostra editor fasi
+        SessionSettingsEditor(
+            fasiIniziali = fasiAttuali,
+            onSave = { nuoveFasi ->
+                fasiAttuali = nuoveFasi.toMutableList()
+                sessione.setFasi(fasiAttuali)
+                editingFasi = false
+            }
+        )
+    } else {
+        // Mostra dashboard allenamento
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("BiciTrack", style = MaterialTheme.typography.headlineLarge)
+            Spacer(Modifier.height(16.dp))
+            Text("Fase: ${faseCorrente?.nome ?: "--"}", style = MaterialTheme.typography.labelLarge)
+            Text("$heartRate BPM", style = MaterialTheme.typography.displayLarge)
+            Spacer(Modifier.height(16.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Button(onClick = {
+                    // Connetti / disconnetti Polar
+                    if (isConnected) {
+                        polarManager.disconnect("0FE04C3A")
+                        isConnected = false
+                        heartRate = "--"
+                    } else {
+                        polarManager.connect("0FE04C3A")
+                    }
+                }) {
+                    Text(if (isConnected) "Disconnetti" else "Connetti Polar")
+                }
+
+                Button(onClick = {
+                    // Avvia o ferma sessione
+                    if (faseCorrente == null) {
+                        sessione.setFasi(fasiAttuali)
+                        sessione.start()
+                    } else {
+                        sessione.stop()
+                        faseCorrente = null
+                    }
+                }) {
+                    Text(if (faseCorrente == null) "Avvia sessione" else "Ferma sessione")
+                }
+
+                Button(onClick = { editingFasi = true }) {
+                    Text("Modifica fasi")
+                }
+            }
+        }
+    }
 }
