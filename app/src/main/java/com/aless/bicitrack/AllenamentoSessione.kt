@@ -43,15 +43,7 @@ class AllenamentoSessione(
     }
 
     fun checkHR(hr: Int) {
-        val fase = fasi.getOrNull(faseCorrenteIndex) ?: return
-        when {
-            hr < fase.fcMin -> speakAudio("Aumenta ritmo")
-            hr > fase.fcMax -> speakAudio("Riduci ritmo")
-        }
-    }
-
-    private fun speakAudio(text: String) {
-        // TODO: TextToSpeech o cuffie BT
+        // La logica audio è gestita dal Service per maggiore stabilità in background
     }
 
     fun stop() {
