@@ -15,6 +15,7 @@ class PolarManager(
     private val onHrUpdate: (Int) -> Unit
 ) {
     private val TAG = "PolarManager"
+    private var connectedDeviceId: String? = null
 
     private val api: PolarBleApi = PolarBleApiDefaultImpl.defaultImplementation(
         context,
@@ -24,23 +25,21 @@ class PolarManager(
     private var hrDisposable: Disposable? = null
 
     init {
-        Log.d(TAG, "PolarManager inizializzato")
         api.setApiCallback(object : PolarBleApiCallback() {
             override fun deviceConnected(polarDeviceInfo: PolarDeviceInfo) {
-                Log.d(TAG, "DEVICE CONNESSO: ${polarDeviceInfo.deviceId}")
+                connectedDeviceId = polarDeviceInfo.deviceId
+                Log.d(TAG, "CONNESSO: $connectedDeviceId")
                 startHrStreaming(polarDeviceInfo.deviceId)
             }
 
             override fun deviceDisconnected(polarDeviceInfo: PolarDeviceInfo) {
-                Log.d(TAG, "DEVICE DISCONNESSO: ${polarDeviceInfo.deviceId}")
+                connectedDeviceId = null
+                Log.d(TAG, "DISCONNESSO")
             }
         })
     }
 
-    fun connect(deviceId: String) {
-        Log.d(TAG, "Avvio connessione a $deviceId")
-        api.connectToDevice(deviceId)
-    }
+    fun connect(deviceId: String) = api.connectToDevice(deviceId)
 
     private fun startHrStreaming(deviceId: String) {
         hrDisposable?.dispose()
@@ -48,17 +47,17 @@ class PolarManager(
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
                 { data: PolarHrData ->
-                    val hrValue = (data.samples.firstOrNull()?.hr ?: 0).toInt()
-                    Log.d(TAG, "HR streaming: $hrValue")
+                    val hrValue = data.samples.firstOrNull()?.hr ?: 0
                     onHrUpdate(hrValue)
                 },
-                { error -> Log.e(TAG, "Errore HR streaming", error) }
+                { error -> Log.e(TAG, "Errore streaming", error) }
             )
     }
 
-    fun disconnect(deviceId: String) {
+    fun disconnect() {
         hrDisposable?.dispose()
-        api.disconnectFromDevice(deviceId)
-        Log.d(TAG, "Disconnesso da $deviceId")
+        connectedDeviceId?.let { api.disconnectFromDevice(it) }
     }
+
+    fun isConnected(): Boolean = connectedDeviceId != null
 }

@@ -2,6 +2,7 @@ package com.aless.bicitrack
 
 import android.os.CountDownTimer
 
+// Definizione del modello dati integrata per risolvere "Unresolved reference"
 data class FaseAllenamento(
     val nome: String,
     val fcMin: Int,
@@ -32,22 +33,26 @@ class AllenamentoSessione(
     private fun startFase(fase: FaseAllenamento) {
         onFaseChange(fase)
         timer?.cancel()
+
+        // Calcolo millisecondi totali della fase
         timer = object : CountDownTimer(fase.durataMinuti * 60 * 1000L, 1000L) {
-            override fun onTick(millisUntilFinished: Long) {}
+            override fun onTick(millisUntilFinished: Long) {
+                // Feedback opzionale ogni secondo
+            }
             override fun onFinish() {
                 faseCorrenteIndex++
-                if (faseCorrenteIndex < fasi.size) startFase(fasi[faseCorrenteIndex])
-                else onSessionEnd()
+                if (faseCorrenteIndex < fasi.size) {
+                    startFase(fasi[faseCorrenteIndex])
+                } else {
+                    onSessionEnd()
+                }
             }
         }.start()
     }
 
-    fun checkHR(hr: Int) {
-        // La logica audio è gestita dal Service per maggiore stabilità in background
-    }
-
     fun stop() {
         timer?.cancel()
-        polarManager.disconnect("0FE04C3A")
+        // Disconnessione pulita tramite il gestore hardware
+        polarManager.disconnect()
     }
 }
