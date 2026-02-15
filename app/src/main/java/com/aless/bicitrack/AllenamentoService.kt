@@ -64,9 +64,12 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
                 ultimoNomeFase = nuovaFase.nome
                 faseCorrente = nuovaFase
                 ultimaIndicazione = ""
-                // Annuncio con QUEUE_ADD per non essere interrotto
+
+                // Annuncio fase (QUEUE_ADD evita sovrapposizioni)
                 speak("Inizio fase ${nuovaFase.nome}. Target tra ${nuovaFase.fcMin} e ${nuovaFase.fcMax}", true)
-                ignoreFeedbackUntil = currentTime + 6000L
+
+                // DELAY AUMENTATO: 10 secondi di silenzio per il feedback HR dopo il cambio fase
+                ignoreFeedbackUntil = currentTime + 10000L
             }
 
             if (currentTime > ignoreFeedbackUntil) checkAudioFeedback(hr)
@@ -113,6 +116,8 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             hr > fase.fcMax -> "Riduci ritmo"
             else -> "Mantieni ritmo"
         }
+
+        // Parla se l'indicazione cambia o se è passato il FEEDBACK_INTERVAL (60s)
         if (nuovaIndicazione != ultimaIndicazione || (nuovaIndicazione != "Mantieni ritmo" && currentTime - lastFeedbackTime > FEEDBACK_INTERVAL)) {
             ultimaIndicazione = nuovaIndicazione
             lastFeedbackTime = currentTime
@@ -124,6 +129,7 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
         if (ttsReady && tts != null) {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             if (requestAudioFocus(audioManager) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                // QUEUE_ADD per le fasi (non interrompe), QUEUE_FLUSH per HR (aggiornamento immediato)
                 val mode = if (isFase) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
                 tts?.speak(text, mode, null, "BiciTrackMsg")
             }
