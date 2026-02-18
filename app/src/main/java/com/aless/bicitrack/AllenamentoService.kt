@@ -34,7 +34,7 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
     private var ultimoNomeFase = ""
 
     private var lastFeedbackTime = 0L
-    private val FEEDBACK_INTERVAL = 60000L
+    private val FEEDBACK_INTERVAL = 60000L // 60 secondi
     private var ignoreFeedbackUntil = 0L
 
     private lateinit var polarManager: PolarManager
@@ -64,64 +64,65 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
                 ultimoNomeFase = nuovaFase.nome
                 faseCorrente = nuovaFase
                 ultimaIndicazione = ""
-
-                // Annuncio fase (QUEUE_ADD evita sovrapposizioni)
                 speak("Inizio fase ${nuovaFase.nome}. Target tra ${nuovaFase.fcMin} e ${nuovaFase.fcMax}", true)
-
-                // DELAY AUMENTATO: 10 secondi di silenzio per il feedback HR dopo il cambio fase
                 ignoreFeedbackUntil = currentTime + 10000L
             }
 
-            if (currentTime > ignoreFeedbackUntil) checkAudioFeedback(hr)
+            if (currentTime > ignoreFeedbackUntil) {
+                checkAudioFeedback(hr)
+            }
             updateNotification("Battito: $hr BPM - ${faseCorrente?.nome ?: ""}")
         }
 
         trainingManager = TrainingManager(SessionSettings.sessioneBase)
     }
 
-    /**
-     * Gestisce la chiusura pulita: disconnette il sensore, salva su DB e ferma il servizio.
-     */
+    private fun checkAudioFeedback(hr: Int) {
+        val fase = faseCorrente ?: return
+        val currentTime = System.currentTimeMillis()
+
+        // Determiniamo il messaggio di ritmo
+        val indicazioneRitmo = when {
+            hr < fase.fcMin && hr > 40 -> "Aumenta ritmo"
+            hr > fase.fcMax -> "Riduci ritmo"
+            else -> "" // Nessun messaggio se il ritmo è corretto
+        }
+
+        // Costruiamo il messaggio finale: sempre i battiti, poi l'eventuale indicazione
+        val messaggioCompleto = if (indicazioneRitmo.isNotEmpty()) {
+            "$hr, $indicazioneRitmo"
+        } else {
+            "$hr"
+        }
+
+        // Decidiamo se parlare:
+        // 1. Se l'indicazione di ritmo è cambiata (es. da "Riduci" a "")
+        // 2. Se è passato il minuto (FEEDBACK_INTERVAL), anche se è solo il numero dei battiti
+        val deveParlare = indicazioneRitmo != ultimaIndicazione ||
+                (currentTime - lastFeedbackTime > FEEDBACK_INTERVAL)
+
+        if (deveParlare) {
+            ultimaIndicazione = indicazioneRitmo
+            lastFeedbackTime = currentTime
+            speak(messaggioCompleto, false)
+        }
+    }
+
     fun salvaEChiudiSessione() {
         polarManager.disconnect()
-
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val sessioneJson = Gson().toJson(SessionSettings.sessioneBase)
                 val dataOra = java.text.SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(java.util.Date())
-
-                val entity = SessioneEntity(
-                    nome = "Sessione $dataOra",
-                    jsonFasi = sessioneJson
-                )
-
+                val entity = SessioneEntity(nome = "Sessione $dataOra", jsonFasi = sessioneJson)
                 database.sessioneDao().saveSessione(entity)
-
-                // Ritorno al main thread per fermare il servizio
                 launch(Dispatchers.Main) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
             } catch (e: Exception) {
-                android.util.Log.e("BiciTrack", "Errore critico durante il salvataggio: ${e.message}")
+                android.util.Log.e("BiciTrack", "Errore salvataggio: ${e.message}")
             }
-        }
-    }
-
-    private fun checkAudioFeedback(hr: Int) {
-        val fase = faseCorrente ?: return
-        val currentTime = System.currentTimeMillis()
-        val nuovaIndicazione = when {
-            hr < fase.fcMin && hr > 40 -> "Aumenta ritmo"
-            hr > fase.fcMax -> "Riduci ritmo"
-            else -> "Mantieni ritmo"
-        }
-
-        // Parla se l'indicazione cambia o se è passato il FEEDBACK_INTERVAL (60s)
-        if (nuovaIndicazione != ultimaIndicazione || (nuovaIndicazione != "Mantieni ritmo" && currentTime - lastFeedbackTime > FEEDBACK_INTERVAL)) {
-            ultimaIndicazione = nuovaIndicazione
-            lastFeedbackTime = currentTime
-            speak(nuovaIndicazione, false)
         }
     }
 
@@ -129,7 +130,6 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
         if (ttsReady && tts != null) {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
             if (requestAudioFocus(audioManager) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-                // QUEUE_ADD per le fasi (non interrompe), QUEUE_FLUSH per HR (aggiornamento immediato)
                 val mode = if (isFase) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH
                 tts?.speak(text, mode, null, "BiciTrackMsg")
             }
