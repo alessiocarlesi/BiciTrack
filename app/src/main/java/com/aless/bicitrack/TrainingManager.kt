@@ -1,8 +1,9 @@
 package com.aless.bicitrack
 
-class TrainingManager(private val fasi: List<FaseAllenamento>) {
+class TrainingManager(private val tutteLeFasi: List<FaseAllenamento>) {
 
     private var startTimeMillis: Long = 0
+    private val fasiAttive = tutteLeFasi.filter { it.durataMinuti > 0 }
 
     fun start() {
         startTimeMillis = System.currentTimeMillis()
@@ -14,35 +15,37 @@ class TrainingManager(private val fasi: List<FaseAllenamento>) {
     }
 
     fun calcolaFaseAttuale(): FaseAllenamento? {
-        if (fasi.isEmpty()) return null
+        if (fasiAttive.isEmpty()) return null
         val minutiTrascorsi = getElapsedMinutes()
 
-        val riscaldamento = fasi[0]
-        val leggera = fasi.getOrNull(1) ?: riscaldamento
-        val moderata = fasi.getOrNull(2) ?: leggera
-        val defaticamento = fasi.getOrNull(3) ?: FaseAllenamento("Fine", 0, 0, 0)
+        // Se l'ultima fase della lista (Defaticamento) ha durata 0, attiviamo il loop
+        val deveCiclar = tutteLeFasi.last().durataMinuti == 0
 
-        // 1. Riscaldamento
-        if (minutiTrascorsi < riscaldamento.durataMinuti) return riscaldamento
+        if (!deveCiclar) {
+            var tempoAccumulato = 0
+            for (fase in fasiAttive) {
+                tempoAccumulato += fase.durataMinuti
+                if (minutiTrascorsi < tempoAccumulato) return fase
+            }
+            return fasiAttive.last()
+        } else {
+            val riscaldamento = fasiAttive.first()
+            if (minutiTrascorsi < riscaldamento.durataMinuti) return riscaldamento
 
-        // 2. Loop Infinito (se defaticamento durata == 0)
-        if (defaticamento.durataMinuti == 0) {
             val tempoDopoWarmup = minutiTrascorsi - riscaldamento.durataMinuti
-            val durataCiclo = leggera.durataMinuti + moderata.durataMinuti
-            if (durataCiclo <= 0) return leggera
+            val fasiLoop = fasiAttive.drop(1)
 
+            if (fasiLoop.isEmpty()) return riscaldamento
+
+            val durataCiclo = fasiLoop.sumOf { it.durataMinuti }
             val tempoNelCiclo = tempoDopoWarmup % durataCiclo
-            return if (tempoNelCiclo < leggera.durataMinuti) leggera else moderata
-        }
 
-        // 3. Logica Lineare (se defaticamento > 0)
-        val fineLeggera = riscaldamento.durataMinuti + leggera.durataMinuti
-        val fineModerata = fineLeggera + moderata.durataMinuti
-
-        return when {
-            minutiTrascorsi < fineLeggera -> leggera
-            minutiTrascorsi < fineModerata -> moderata
-            else -> defaticamento
+            var tempoAccumulatoCiclo = 0
+            for (fase in fasiLoop) {
+                tempoAccumulatoCiclo += fase.durataMinuti
+                if (tempoNelCiclo < tempoAccumulatoCiclo) return fase
+            }
+            return fasiLoop.last()
         }
     }
 }

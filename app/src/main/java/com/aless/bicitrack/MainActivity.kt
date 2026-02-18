@@ -34,9 +34,8 @@ class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        if (!allGranted) {
-            Toast.makeText(this, "Permessi necessari per sensore e notifiche", Toast.LENGTH_LONG).show()
+        if (!permissions.values.all { it }) {
+            Toast.makeText(this, "Permessi necessari", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -53,10 +52,16 @@ class MainActivity : ComponentActivity() {
             ultimaSessione?.let { entity ->
                 try {
                     val listType = object : TypeToken<List<FaseAllenamento>>() {}.type
-                    val fasiRecuperate: List<FaseAllenamento> = Gson().fromJson(entity.jsonFasi, listType)
-                    SessionSettings.sessioneBase = fasiRecuperate
+                    val recuperate: List<FaseAllenamento> = Gson().fromJson(entity.jsonFasi, listType)
+
+                    // Sincronizzazione: se il DB ha un numero di fasi diverso, usiamo quelle di default
+                    SessionSettings.sessioneBase = if (recuperate.size != 11) {
+                        SessionSettings.sessioneBase
+                    } else {
+                        recuperate
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.e("BiciTrack", "Errore nel caricamento sessione: ${e.message}")
+                    android.util.Log.e("BiciTrack", "Errore caricamento: ${e.message}")
                 }
             }
         }
@@ -66,7 +71,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             BiciTrackTheme {
                 var isEditing by remember { mutableStateOf(true) }
-
                 Surface(color = MaterialTheme.colorScheme.background) {
                     if (isEditing) {
                         SessionSettingsEditor(
@@ -77,7 +81,6 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     } else {
-                        // Passiamo finish() per chiudere l'activity quando l'allenamento finisce
                         AllenamentoScreen(onFinished = { finishAndRemoveTask() })
                     }
                 }
@@ -88,21 +91,13 @@ class MainActivity : ComponentActivity() {
     private fun richiediPermessi() {
         val permissions = when {
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.BODY_SENSORS,
-                    Manifest.permission.POST_NOTIFICATIONS
-                )
+                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BODY_SENSORS,
+                    Manifest.permission.POST_NOTIFICATIONS)
             }
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                arrayOf(
-                    Manifest.permission.BLUETOOTH_SCAN,
-                    Manifest.permission.BLUETOOTH_CONNECT,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.BODY_SENSORS
-                )
+                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BODY_SENSORS)
             }
             else -> arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
@@ -138,7 +133,6 @@ fun AllenamentoScreen(onFinished: () -> Unit) {
             context.startService(intent)
         }
         context.bindService(intent, connection, Context.BIND_AUTO_CREATE)
-
         onDispose {
             if (isBound) {
                 context.unbindService(connection)
@@ -152,10 +146,7 @@ fun AllenamentoScreen(onFinished: () -> Unit) {
             heartRate = service!!.heartRate,
             faseCorrente = service!!.faseCorrente,
             onStop = {
-                // 1. Chiamiamo il metodo di salvataggio interno al Service
                 service?.salvaEChiudiSessione()
-
-                // 2. Chiudiamo l'Activity (tramite il callback onFinished)
                 onFinished()
             }
         )
