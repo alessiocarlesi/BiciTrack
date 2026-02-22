@@ -30,11 +30,14 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
 
     var heartRate by mutableStateOf(0)
     var faseCorrente by mutableStateOf<FaseAllenamento?>(null)
+
+    // Aggiornato il flag per rispecchiare l'etichetta BPM
+    var soloBPM by mutableStateOf(false)
+
     private var ultimaIndicazione = ""
     private var ultimoNomeFase = ""
-
     private var lastFeedbackTime = 0L
-    private val FEEDBACK_INTERVAL = 60000L // 60 secondi
+    private val FEEDBACK_INTERVAL = 60000L
     private var ignoreFeedbackUntil = 0L
 
     private lateinit var polarManager: PolarManager
@@ -52,14 +55,18 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        database = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "bicitrack-db").build()
+        database = Room.databaseBuilder(applicationContext, AppDatabase::class.java, "bicitrack-db")
+            .fallbackToDestructiveMigration().build()
         tts = TextToSpeech(this, this)
+
+        // Recupero iniziale dal file di impostazioni globale
+        soloBPM = SessionSettings.soloBPM
 
         polarManager = PolarManager(this) { hr ->
             heartRate = hr
             val currentTime = System.currentTimeMillis()
-
             val nuovaFase = trainingManager.calcolaFaseAttuale()
+
             if (nuovaFase != null && nuovaFase.nome != ultimoNomeFase) {
                 ultimoNomeFase = nuovaFase.nome
                 faseCorrente = nuovaFase
@@ -73,7 +80,6 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             }
             updateNotification("Battito: $hr BPM - ${faseCorrente?.nome ?: ""}")
         }
-
         trainingManager = TrainingManager(SessionSettings.sessioneBase)
     }
 
@@ -81,25 +87,20 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
         val fase = faseCorrente ?: return
         val currentTime = System.currentTimeMillis()
 
-        // Determiniamo il messaggio di ritmo
         val indicazioneRitmo = when {
             hr < fase.fcMin && hr > 40 -> "Aumenta ritmo"
             hr > fase.fcMax -> "Riduci ritmo"
-            else -> "" // Nessun messaggio se il ritmo è corretto
+            else -> ""
         }
 
-        // Costruiamo il messaggio finale: sempre i battiti, poi l'eventuale indicazione
-        val messaggioCompleto = if (indicazioneRitmo.isNotEmpty()) {
-            "$hr, $indicazioneRitmo"
+        // Se soloBPM è attivo, il coach dirà solo il numero
+        val messaggioCompleto = if (soloBPM || indicazioneRitmo.isEmpty()) "$hr" else "$hr, $indicazioneRitmo"
+
+        val deveParlare = if (soloBPM) {
+            (currentTime - lastFeedbackTime > FEEDBACK_INTERVAL)
         } else {
-            "$hr"
+            indicazioneRitmo != ultimaIndicazione || (currentTime - lastFeedbackTime > FEEDBACK_INTERVAL)
         }
-
-        // Decidiamo se parlare:
-        // 1. Se l'indicazione di ritmo è cambiata (es. da "Riduci" a "")
-        // 2. Se è passato il minuto (FEEDBACK_INTERVAL), anche se è solo il numero dei battiti
-        val deveParlare = indicazioneRitmo != ultimaIndicazione ||
-                (currentTime - lastFeedbackTime > FEEDBACK_INTERVAL)
 
         if (deveParlare) {
             ultimaIndicazione = indicazioneRitmo
@@ -110,11 +111,13 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
 
     fun salvaEChiudiSessione() {
         polarManager.disconnect()
+        SessionSettings.soloBPM = soloBPM
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val sessioneJson = Gson().toJson(SessionSettings.sessioneBase)
                 val dataOra = java.text.SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(java.util.Date())
-                val entity = SessioneEntity(nome = "Sessione $dataOra", jsonFasi = sessioneJson)
+                val entity = SessioneEntity(nome = "Sessione $dataOra", jsonFasi = sessioneJson, soloFC = soloBPM)
                 database.sessioneDao().saveSessione(entity)
                 launch(Dispatchers.Main) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -135,6 +138,8 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             }
         }
     }
+
+    // ... (restanti metodi standard onStartCommand, onInit, ecc. invariati)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         polarManager.connect("0FE04C3A")

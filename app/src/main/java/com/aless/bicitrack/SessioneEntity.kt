@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class SessioneEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val nome: String,
-    val jsonFasi: String // memorizza le fasi come JSON
+    val jsonFasi: String,
+    val soloFC: Boolean = false // Aggiunto per salvare la preferenza
 )

@@ -12,15 +12,13 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import androidx.room.Room
 import com.aless.bicitrack.data.db.AppDatabase
@@ -45,24 +43,24 @@ class MainActivity : ComponentActivity() {
         val db = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java, "bicitrack-db"
-        ).build()
+        ).fallbackToDestructiveMigration().build()
 
         lifecycleScope.launch {
-            val ultimaSessione = db.sessioneDao().getSessione()
-            ultimaSessione?.let { entity ->
-                try {
+            try {
+                val ultimaSessione = db.sessioneDao().getSessione()
+                ultimaSessione?.let { entity ->
                     val listType = object : TypeToken<List<FaseAllenamento>>() {}.type
                     val recuperate: List<FaseAllenamento> = Gson().fromJson(entity.jsonFasi, listType)
 
-                    // Sincronizzazione: se il DB ha un numero di fasi diverso, usiamo quelle di default
-                    SessionSettings.sessioneBase = if (recuperate.size != 11) {
-                        SessionSettings.sessioneBase
-                    } else {
-                        recuperate
+                    // Carichiamo solo se i dati sono validi e coerenti (11 fasi)
+                    if (recuperate.size == 11) {
+                        SessionSettings.sessioneBase = recuperate
                     }
-                } catch (e: Exception) {
-                    android.util.Log.e("BiciTrack", "Errore caricamento: ${e.message}")
+                    // Recupero sicuro del flag
+                    SessionSettings.soloBPM = entity.soloFC
                 }
+            } catch (e: Exception) {
+                android.util.Log.e("BiciTrack", "Errore DB: ${e.message}")
             }
         }
 
@@ -142,14 +140,29 @@ fun AllenamentoScreen(onFinished: () -> Unit) {
     }
 
     if (isBound && service != null) {
-        AllenamentoDashboard(
-            heartRate = service!!.heartRate,
-            faseCorrente = service!!.faseCorrente,
-            onStop = {
-                service?.salvaEChiudiSessione()
-                onFinished()
+        Box(modifier = Modifier.fillMaxSize()) {
+            AllenamentoDashboard(
+                heartRate = service!!.heartRate,
+                faseCorrente = service!!.faseCorrente,
+                onStop = {
+                    service?.salvaEChiudiSessione()
+                    onFinished()
+                }
+            )
+
+            // UI del Flag Solo FC
+            Row(
+                modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Solo BPM", style = MaterialTheme.typography.bodySmall)
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = service!!.soloBPM,
+                    onCheckedChange = { service!!.soloBPM = it }
+                )
             }
-        )
+        }
     } else {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
