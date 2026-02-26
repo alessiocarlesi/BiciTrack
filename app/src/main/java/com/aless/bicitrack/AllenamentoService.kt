@@ -30,8 +30,6 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
 
     var heartRate by mutableStateOf(0)
     var faseCorrente by mutableStateOf<FaseAllenamento?>(null)
-
-    // Aggiornato il flag per rispecchiare l'etichetta BPM
     var soloBPM by mutableStateOf(false)
 
     private var ultimaIndicazione = ""
@@ -59,7 +57,6 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             .fallbackToDestructiveMigration().build()
         tts = TextToSpeech(this, this)
 
-        // Recupero iniziale dal file di impostazioni globale
         soloBPM = SessionSettings.soloBPM
 
         polarManager = PolarManager(this) { hr ->
@@ -93,7 +90,6 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             else -> ""
         }
 
-        // Se soloBPM è attivo, il coach dirà solo il numero
         val messaggioCompleto = if (soloBPM || indicazioneRitmo.isEmpty()) "$hr" else "$hr, $indicazioneRitmo"
 
         val deveParlare = if (soloBPM) {
@@ -109,8 +105,13 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
+    /**
+     * MODIFICATO: Chiusura aggressiva del servizio e rimozione notifica
+     */
     fun salvaEChiudiSessione() {
+        // 1. Fermiamo subito il monitoraggio e l'audio
         polarManager.disconnect()
+        tts?.stop()
         SessionSettings.soloBPM = soloBPM
 
         CoroutineScope(Dispatchers.IO).launch {
@@ -119,12 +120,19 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
                 val dataOra = java.text.SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(java.util.Date())
                 val entity = SessioneEntity(nome = "Sessione $dataOra", jsonFasi = sessioneJson, soloFC = soloBPM)
                 database.sessioneDao().saveSessione(entity)
+
                 launch(Dispatchers.Main) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    // 2. Rimuoviamo la notifica Foreground prima di chiudere
+                    stopForeground(true)
+                    // 3. Fermiamo definitivamente il servizio
                     stopSelf()
                 }
             } catch (e: Exception) {
                 android.util.Log.e("BiciTrack", "Errore salvataggio: ${e.message}")
+                launch(Dispatchers.Main) {
+                    stopForeground(true)
+                    stopSelf()
+                }
             }
         }
     }
@@ -138,8 +146,6 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
             }
         }
     }
-
-    // ... (restanti metodi standard onStartCommand, onInit, ecc. invariati)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         polarManager.connect("0FE04C3A")
@@ -185,10 +191,15 @@ class AllenamentoService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
+    /**
+     * MODIFICATO: Pulizia finale garantita
+     */
     override fun onDestroy() {
         polarManager.disconnect()
         tts?.stop()
         tts?.shutdown()
+        // Assicuriamoci che la notifica venga rimossa se il sistema uccide il servizio
+        stopForeground(true)
         super.onDestroy()
     }
 }
